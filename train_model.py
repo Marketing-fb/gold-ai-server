@@ -63,7 +63,7 @@ data['US10Y_Change'] = data['US10Y'].squeeze().pct_change(1)
 data.dropna(inplace=True)
 
 # Define Target (1 if next day price goes UP, 0 if DOWN)
-data['Target'] = np.where(gold_prices.shift(-1) > gold_prices, 1, 0)
+data['Target'] = np.where(data['Gold'].shift(-1) > data['Gold'], 1, 0)
 # Drop the last row because target is NaN
 data = data.iloc[:-1]
 
