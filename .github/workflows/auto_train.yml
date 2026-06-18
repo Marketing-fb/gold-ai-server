@@ -1,0 +1,45 @@
+name: AI Auto-Training Pipeline (MLOps)
+
+on:
+  schedule:
+    # รันทุกคืนวันเสาร์เวลาเที่ยงคืน (00:00 UTC) ตลาดปิดแล้ว
+    - cron: '0 0 * * 6'
+  workflow_dispatch:
+    # อนุญาตให้กดปุ่ม Run เองแบบแมนนวลได้ในหน้า GitHub Actions
+
+jobs:
+  train-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: 📥 1. Checkout Repository
+      uses: actions/checkout@v3
+
+    - name: 🐍 2. Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: 📦 3. Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install yfinance pandas numpy xgboost scikit-learn
+
+    - name: 🧠 4. Run AI Training Script
+      run: python train_model.py
+
+    - name: 🚀 5. Commit and Push Updated Brain
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        git config --global user.name "AI-Auto-Trainer"
+        git config --global user.email "bot@github.actions"
+        
+        # เช็คว่าไฟล์มีการเปลี่ยนแปลงหรือไม่
+        git add gold_champion_macro.json
+        if git diff --staged --quiet; then
+          echo "No changes to the AI model. Skipping commit."
+        else
+          git commit -m "🤖 Auto-Update: Retrained AI Model with latest market data"
+          git push origin main
+        fi
