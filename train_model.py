@@ -20,14 +20,21 @@ tickers = {
 data_frames = []
 for name, ticker in tickers.items():
     df = yf.download(ticker, period="10y", interval="1d")
-    df = df[['Close']].rename(columns={'Close': name})
-    data_frames.append(df)
+    
+    # ดึงค่า Close ออกมาให้เป็น 1D Series แน่นอน 100%
+    if 'Close' in df.columns:
+        if isinstance(df['Close'], pd.DataFrame):
+            series = df['Close'].iloc[:, 0]
+        else:
+            series = df['Close']
+    else:
+        series = df.iloc[:, 3] # fallback
+        
+    series.name = name
+    data_frames.append(series)
 
-# Merge all data
-merged_data = data_frames[0]
-for df in data_frames[1:]:
-    merged_data = merged_data.join(df, how='inner')
-
+# Merge all series into a single DataFrame
+merged_data = pd.concat(data_frames, axis=1, join='inner')
 merged_data.dropna(inplace=True)
 print(f"✅ Data fetched successfully. Total rows: {len(merged_data)}")
 
@@ -35,26 +42,28 @@ print(f"✅ Data fetched successfully. Total rows: {len(merged_data)}")
 print("⚙️ Engineering Features...")
 data = merged_data.copy()
 
-# Returns
-data['Return_1d'] = data['Gold'].pct_change(1)
-data['Return_3d'] = data['Gold'].pct_change(3)
+# Ensure we are working with 1D Series for calculations
+gold_prices = data['Gold'].squeeze()
+
+data['Return_1d'] = gold_prices.pct_change(1)
+data['Return_3d'] = gold_prices.pct_change(3)
 
 # Moving Averages & Trend
-data['SMA_20'] = data['Gold'].rolling(window=20).mean()
-data['Trend_Distance'] = (data['Gold'] - data['SMA_20']) / data['SMA_20']
+data['SMA_20'] = gold_prices.rolling(window=20).mean()
+data['Trend_Distance'] = (gold_prices - data['SMA_20']) / data['SMA_20']
 
 # Volatility
 data['Volatility_10d'] = data['Return_1d'].rolling(window=10).std()
 
 # Macro Changes
-data['DXY_Change'] = data['DXY'].pct_change(1)
-data['US10Y_Change'] = data['US10Y'].pct_change(1)
+data['DXY_Change'] = data['DXY'].squeeze().pct_change(1)
+data['US10Y_Change'] = data['US10Y'].squeeze().pct_change(1)
 
 # Drop NaNs created by rolling/pct_change
 data.dropna(inplace=True)
 
 # Define Target (1 if next day price goes UP, 0 if DOWN)
-data['Target'] = np.where(data['Gold'].shift(-1) > data['Gold'], 1, 0)
+data['Target'] = np.where(gold_prices.shift(-1) > gold_prices, 1, 0)
 # Drop the last row because target is NaN
 data = data.iloc[:-1]
 
