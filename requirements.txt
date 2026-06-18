@@ -5,3 +5,5 @@ numpy
 yfinance
 scikit-learn
 gunicorn
+stable-baselines3
+gymnasium
