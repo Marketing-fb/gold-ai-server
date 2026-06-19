@@ -1,4 +1,10 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
+import yfinance as yf
+import xgboost as xgb
+import pandas as pd
+import numpy as np
+import subprocess
+import os
 import yfinance as yf
 import xgboost as xgb
 import pandas as pd
@@ -7,7 +13,7 @@ import numpy as np
 app = Flask(__name__)
 
 # ---------------------------------------------------------
-# 1. โหลดสมอง AI (ไฟล์ .json ที่เราได้มาจากการเทรน)
+# 1. โหลดสมอง AI (ไฟล์ .json ที่เราได้มาจาก Colab)
 # ---------------------------------------------------------
 try:
     model = xgb.XGBClassifier()
@@ -88,5 +94,41 @@ def predict():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# ---------------------------------------------------------
+# 3. ฟังก์ชันอัปเดตโมเดลอัตโนมัติ (Auto-Retraining Pipeline)
+# ---------------------------------------------------------
+RETRAIN_KEY = "xauusd_ai_master"
+
+@app.route('/retrain', methods=['POST'])
+def retrain():
+    key = request.args.get('key')
+    if key != RETRAIN_KEY:
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    try:
+        # รันไฟล์ train_model.py
+        result = subprocess.run(["python", "train_model.py"], capture_output=True, text=True)
+        if result.returncode == 0:
+            # โหลดสมองใหม่เข้าระบบ
+            global model
+            if model is None:
+                model = xgb.XGBClassifier()
+            model.load_model('gold_champion_macro.json')
+            
+            return jsonify({
+                "status": "success",
+                "message": "โมเดลถูกเทรนและอัปเดตใหม่เรียบร้อยแล้ว!",
+                "logs": result.stdout
+            })
+        else:
+            return jsonify({
+                "status": "error",
+                "message": "การเทรนล้มเหลว",
+                "logs": result.stderr
+            }), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 if __name__ == '__main__':
+    # สำหรับการรันเทสต์บนเครื่องส่วนตัว (Render จะใช้ Gunicorn รันแทน)
     app.run(host='0.0.0.0', port=5000)
