@@ -7,7 +7,7 @@ import numpy as np
 app = Flask(__name__)
 
 # ---------------------------------------------------------
-# 1. โหลดสมอง AI (ไฟล์ .json ที่เราได้มาจาก Colab)
+# 1. โหลดสมอง AI (ไฟล์ .json ที่เราได้มาจากการเทรน)
 # ---------------------------------------------------------
 try:
     model = xgb.XGBClassifier()
@@ -46,28 +46,26 @@ def predict():
         # รวมตาราง
         data = gold.join([dxy, us10y, vix], how='inner')
         
-        # --- B. คำนวณ Indicators ---
-        delta = data['Close'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-        data['RSI'] = 100 - (100 / (1 + (gain / loss)))
+        # --- B. คำนวณ Indicators (ให้ตรงกับตอน Train) ---
+        gold_prices = data['Close']
         
-        data['Return_1d'] = data['Close'].pct_change(1)
-        data['Return_3d'] = data['Close'].pct_change(3)
-        data['Trend_Distance'] = data['Close'] - data['Close'].ewm(span=21).mean()
+        data['Return_1d'] = gold_prices.pct_change(1)
+        data['Return_3d'] = gold_prices.pct_change(3)
         
-        data['DXY_Momentum'] = data['DXY'].pct_change(5)
-        data['US10Y_Change'] = data['US10Y'].diff(3)
-        data['VIX_Spike'] = data['VIX'] - data['VIX'].rolling(20).mean()
+        data['SMA_20'] = gold_prices.rolling(window=20).mean()
+        data['Trend_Distance'] = (gold_prices - data['SMA_20']) / data['SMA_20']
+        
+        data['Volatility_10d'] = data['Return_1d'].rolling(window=10).std()
+        
+        data['DXY_Change'] = data['DXY'].pct_change(1)
+        data['US10Y_Change'] = data['US10Y'].pct_change(1)
         
         # --- C. เตรียมข้อมูลวันล่าสุดส่งให้ AI ---
         latest_data = data.iloc[-1:] # ดึงแถวสุดท้าย (วันนี้)
         
         features = [
-            'RSI', 'Return_1d', 'Return_3d', 'Trend_Distance', 
-            'DXY', 'DXY_Momentum',     
-            'US10Y', 'US10Y_Change',   
-            'VIX', 'VIX_Spike'         
+            'Return_1d', 'Return_3d', 'Trend_Distance', 'Volatility_10d', 
+            'DXY', 'US10Y', 'DXY_Change', 'US10Y_Change'
         ]
         X_latest = latest_data[features]
         
@@ -91,5 +89,4 @@ def predict():
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    # สำหรับการรันเทสต์บนเครื่องส่วนตัว (Render จะใช้ Gunicorn รันแทน)
     app.run(host='0.0.0.0', port=5000)
