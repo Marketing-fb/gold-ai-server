@@ -129,6 +129,80 @@ def retrain():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# ---------------------------------------------------------
+# 4. ฟังก์ชัน Backtest ย้อนหลัง 5 ปี
+# ---------------------------------------------------------
+@app.route('/run_backtest', methods=['GET'])
+def run_backtest():
+    if model is None:
+        return jsonify({"error": "AI Model is not loaded"}), 500
+
+    try:
+        # 1. Fetch Data
+        tickers = {'Gold': 'GC=F', 'DXY': 'DX-Y.NYB', 'US10Y': '^TNX'}
+        data_frames = []
+        for name, ticker in tickers.items():
+            df = yf.download(ticker, period="5y", interval="1d")
+            if 'Close' in df.columns:
+                if isinstance(df['Close'], pd.DataFrame):
+                    series = df['Close'].iloc[:, 0]
+                else:
+                    series = df['Close']
+            else:
+                series = df.iloc[:, 3] 
+            series.name = name
+            data_frames.append(series)
+
+        data = pd.concat(data_frames, axis=1, join='inner')
+        data.dropna(inplace=True)
+
+        # 2. Build Features
+        gold_prices = data['Gold']
+        data['Return_1d'] = gold_prices.pct_change(1)
+        data['Return_3d'] = gold_prices.pct_change(3)
+        data['SMA_20'] = gold_prices.rolling(window=20).mean()
+        data['Trend_Distance'] = (gold_prices - data['SMA_20']) / data['SMA_20']
+        data['Volatility_10d'] = data['Return_1d'].rolling(window=10).std()
+        data['DXY_Change'] = data['DXY'].pct_change(1)
+        data['US10Y_Change'] = data['US10Y'].pct_change(1)
+        data.dropna(inplace=True)
+
+        features = ['Return_1d', 'Return_3d', 'Trend_Distance', 'Volatility_10d', 'DXY', 'US10Y', 'DXY_Change', 'US10Y_Change']
+        X = data[features]
+
+        # 3. Simulate Trades
+        data['Prediction'] = model.predict(X)
+        data['Next_Day_Return'] = gold_prices.pct_change(1).shift(-1)
+        data['Strategy_Return'] = np.where(data['Prediction'] == 1, data['Next_Day_Return'], -data['Next_Day_Return'])
+        data.dropna(inplace=True)
+
+        # 4. Calculate Metrics
+        data['Cumulative_Market'] = (1 + data['Next_Day_Return']).cumprod()
+        data['Cumulative_Strategy'] = (1 + data['Strategy_Return']).cumprod()
+
+        wins = len(data[data['Strategy_Return'] > 0])
+        losses = len(data[data['Strategy_Return'] < 0])
+        win_rate = (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0
+
+        roll_max = data['Cumulative_Strategy'].cummax()
+        drawdown = data['Cumulative_Strategy'] / roll_max - 1.0
+        max_drawdown = drawdown.min() * 100
+
+        total_market_return = (data['Cumulative_Market'].iloc[-1] - 1) * 100
+        total_strategy_return = (data['Cumulative_Strategy'].iloc[-1] - 1) * 100
+
+        return jsonify({
+            "status": "success",
+            "trading_days": len(data),
+            "win_rate": f"{win_rate:.2f}%",
+            "market_return": f"{total_market_return:.2f}%",
+            "strategy_return": f"{total_strategy_return:.2f}%",
+            "max_drawdown": f"{max_drawdown:.2f}%"
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 if __name__ == '__main__':
     # สำหรับการรันเทสต์บนเครื่องส่วนตัว (Render จะใช้ Gunicorn รันแทน)
     app.run(host='0.0.0.0', port=5000)
