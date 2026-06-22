@@ -203,6 +203,29 @@ def run_backtest():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# ---------------------------------------------------------
+# 5. ฟังก์ชันรับ Feedback สำหรับ Self-Healing AI
+# ---------------------------------------------------------
+@app.route('/feedback', methods=['POST'])
+def receive_feedback():
+    data = request.json
+    if not data:
+        return jsonify({"status": "error", "message": "No data provided"}), 400
+        
+    signal = data.get('signal')
+    entry_price = data.get('entry_price')
+    result = data.get('result') # 'WIN' or 'LOSS'
+    profit_loss = data.get('profit_loss')
+    
+    # ตัวอย่างการเซฟลง Log File หรือ Database
+    with open("trading_feedback_log.csv", "a", encoding="utf-8") as f:
+        f.write(f"{signal},{entry_price},{result},{profit_loss}\n")
+        
+    print(f"✅ Received Trade Feedback: {result} ({signal}) - PnL: {profit_loss}")
+    
+    # ในอนาคตคุณสามารถเขียน Script นำไฟล์ .csv นี้ไป Retrain Model ได้
+    return jsonify({"status": "success", "message": "Feedback recorded"}), 200
+
 if __name__ == '__main__':
     # สำหรับการรันเทสต์บนเครื่องส่วนตัว (Render จะใช้ Gunicorn รันแทน)
     app.run(host='0.0.0.0', port=5000)
