@@ -87,6 +87,24 @@ model.fit(X, y)
 accuracy = model.score(X, y)
 print(f"🎯 Training completed. In-sample Accuracy: {accuracy*100:.2f}%")
 
+# Extract Feature Importances
+importances = model.feature_importances_
+feature_names = features
+weights = {feature_names[i]: round(float(importances[i])*100, 2) for i in range(len(features))}
+print("📊 Feature Importances:", weights)
+
+# Send weights to WebApp
+WEBAPP_URL = "https://script.google.com/macros/s/AKfycbyQYkWuDeobLHd7m4RthtiOG41-tKy3XTfCeSbO_bZOs0PNAqWru53nfUk1NnX85Hf8/exec"  # <-- เปลี่ยนตรงนี้
+if WEBAPP_URL != "ใส่ URL ของ Google Web App ที่นี่":
+    import requests, json
+    try:
+        print("🌐 Sending new AI weights to WebApp...")
+        payload = {'action': 'update_weights', 'weights': json.dumps(weights)}
+        response = requests.post(WEBAPP_URL, data=payload)
+        print("✅ WebApp Response:", response.text)
+    except Exception as e:
+        print("❌ Failed to update WebApp:", e)
+
 # 4. Save the Model
 model_filename = 'gold_champion_macro.json'
 model.save_model(model_filename)
