@@ -5,7 +5,8 @@ print("Fetching latest data from Yahoo Finance...")
 tickers = {'Gold': 'GC=F', 'DXY': 'DX-Y.NYB', 'US10Y': '^TNX'}
 data_frames = []
 for name, ticker in tickers.items():
-    df = yf.download(ticker, period="60d", interval="1d", multi_level_index=False)
+    # เปลี่ยนจาก 60d เป็น 1y (1 ปี) เพื่อให้ข้อมูลพอคำนวณเส้นค่าเฉลี่ย 60 วัน (SMA_60)
+    df = yf.download(ticker, period="1y", interval="1d", multi_level_index=False)
     if 'Close' in df.columns:
         series = df['Close'].iloc[:, 0] if isinstance(df['Close'], pd.DataFrame) else df['Close']
     else:
