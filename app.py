@@ -2,8 +2,8 @@ from flask import Flask, request, jsonify
 import joblib
 import pandas as pd
 import numpy as np
-import yfinance as yf
 from stable_baselines3 import PPO
+import os
 
 app = Flask(__name__)
 
@@ -20,15 +20,11 @@ except Exception as e:
     print(f"⚠️ Error loading models: {e}")
 
 def get_latest_features(sentiment_score=0.0):
-    tickers = {'Gold': 'GC=F', 'DXY': 'DX-Y.NYB', 'US10Y': '^TNX'}
-    data_frames = []
-    for name, ticker in tickers.items():
-        df = yf.download(ticker, period="60d", interval="1d", multi_level_index=False)
-        series = df['Close'].iloc[:, 0] if isinstance(df['Close'], pd.DataFrame) else df['Close']
-        series.name = name
-        data_frames.append(series)
-
-    data = pd.concat(data_frames, axis=1, join='inner').dropna()
+    # โหลดข้อมูลที่ GitHub ไปดึงมาให้ล่วงหน้า (แก้ปัญหา Yahoo บล็อก IP แบบชะงัด)
+    if not os.path.exists('latest_data.csv'):
+        raise FileNotFoundError("ไม่พบไฟล์ latest_data.csv กรุณากด Run workflow ใน GitHub ก่อนครับ")
+        
+    data = pd.read_csv('latest_data.csv', index_col=0, parse_dates=True)
     gold_prices = data['Gold']
 
     # Feature Engineering
@@ -119,7 +115,7 @@ def predict():
 
 @app.route('/')
 def home():
-    return "Institutional Grade Gold AI Server (Ensemble + Macro + Sentiment) is Running!"
+    return "Institutional Grade Gold AI Server (Hybrid Version) is Running!"
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=10000)
