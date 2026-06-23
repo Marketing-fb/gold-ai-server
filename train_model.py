@@ -2,111 +2,72 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import xgboost as xgb
-from datetime import datetime
-import warnings
-warnings.filterwarnings('ignore')
+import joblib
 
-print("🚀 Starting Automated AI Training Process...")
+print("🚀 Starting Automated AI Training Process (Ensemble: XGBoost + Random Forest)...")
 
-# 1. Download Data
-print("📊 Fetching latest market data from Yahoo Finance...")
-tickers = {
-    'Gold': 'GC=F',
-    'DXY': 'DX-Y.NYB',
-    'US10Y': '^TNX',
-    'SP500': '^GSPC'
-}
-
+# 1. Download Data (Macro + Technical)
+print("📊 Fetching market data...")
+tickers = {'Gold': 'GC=F', 'DXY': 'DX-Y.NYB', 'US10Y': '^TNX'}
 data_frames = []
 for name, ticker in tickers.items():
     df = yf.download(ticker, period="10y", interval="1d")
-    
-    # ดึงค่า Close ออกมาให้เป็น 1D Series แน่นอน 100%
     if 'Close' in df.columns:
-        if isinstance(df['Close'], pd.DataFrame):
-            series = df['Close'].iloc[:, 0]
-        else:
-            series = df['Close']
+        series = df['Close'].iloc[:, 0] if isinstance(df['Close'], pd.DataFrame) else df['Close']
     else:
-        series = df.iloc[:, 3] # fallback
-        
+        series = df.iloc[:, 3]
     series.name = name
     data_frames.append(series)
 
-# Merge all series into a single DataFrame
-merged_data = pd.concat(data_frames, axis=1, join='inner')
-merged_data.dropna(inplace=True)
-print(f"✅ Data fetched successfully. Total rows: {len(merged_data)}")
+merged_data = pd.concat(data_frames, axis=1, join='inner').dropna()
 
-# 2. Feature Engineering (Macro + Technical)
+# 2. Feature Engineering
 print("⚙️ Engineering Features...")
 data = merged_data.copy()
-
-# Ensure we are working with 1D Series for calculations
 gold_prices = data['Gold'].squeeze()
 
 data['Return_1d'] = gold_prices.pct_change(1)
 data['Return_3d'] = gold_prices.pct_change(3)
+data['SMA_10'] = gold_prices.rolling(window=10).mean()
+data['SMA_50'] = gold_prices.rolling(window=50).mean()
+data['RSI_14'] = 100 - (100 / (1 + data['Return_1d'].apply(lambda x: x if x > 0 else 0).rolling(14).mean() / 
+                                  data['Return_1d'].apply(lambda x: -x if x < 0 else 0).rolling(14).mean()))
 
-# Moving Averages & Trend
-data['SMA_20'] = gold_prices.rolling(window=20).mean()
-data['Trend_Distance'] = (gold_prices - data['SMA_20']) / data['SMA_20']
+# Macro Features
+data['DXY_Return'] = data['DXY'].pct_change(1)
+data['US10Y_Return'] = data['US10Y'].pct_change(1)
 
-# Volatility
-data['Volatility_10d'] = data['Return_1d'].rolling(window=10).std()
+# Sentiment Feature (Simulated historic sentiment 0 = neutral, 1 = good, -1 = bad)
+data['Sentiment_Score'] = np.random.uniform(-1, 1, size=len(data)) 
 
-# Macro Changes
-data['DXY_Change'] = data['DXY'].squeeze().pct_change(1)
-data['US10Y_Change'] = data['US10Y'].squeeze().pct_change(1)
-
-# Drop NaNs created by rolling/pct_change
+# Target Variable (1 if price goes up tomorrow, else 0)
+data['Target'] = (data['Return_1d'].shift(-1) > 0).astype(int)
 data.dropna(inplace=True)
 
-# Define Target (1 if next day price goes UP, 0 if DOWN)
-data['Target'] = np.where(data['Gold'].shift(-1) > data['Gold'], 1, 0)
-# Drop the last row because target is NaN
-data = data.iloc[:-1]
-
-# 3. Model Training
-print("🧠 Training XGBoost Model...")
-features = ['Return_1d', 'Return_3d', 'Trend_Distance', 'Volatility_10d', 'DXY', 'US10Y', 'DXY_Change', 'US10Y_Change']
-X = data[features]
+X = data.drop(columns=['Target', 'Gold', 'DXY', 'US10Y'])
 y = data['Target']
 
-# Initialize and train model
-model = xgb.XGBClassifier(
-    n_estimators=100,
-    learning_rate=0.05,
-    max_depth=4,
-    subsample=0.8,
-    colsample_bytree=0.8,
-    random_state=42
+# 3. Train XGBoost
+print("🧠 Training XGBoost Model...")
+model_xgb = xgb.XGBClassifier(
+    n_estimators=200, 
+    max_depth=5, 
+    learning_rate=0.05, 
+    random_state=42,
+    eval_metric='logloss'
 )
+model_xgb.fit(X, y)
+joblib.dump(model_xgb, "xgboost_model.pkl")
 
-model.fit(X, y)
-accuracy = model.score(X, y)
-print(f"🎯 Training completed. In-sample Accuracy: {accuracy*100:.2f}%")
+# 4. Train Random Forest (Ensemble Part 2)
+from sklearn.ensemble import RandomForestClassifier
+print("🧠 Training Random Forest Model...")
+model_rf = RandomForestClassifier(n_estimators=200, max_depth=5, random_state=42)
+model_rf.fit(X, y)
+joblib.dump(model_rf, "rf_model.pkl")
 
-# Extract Feature Importances
-importances = model.feature_importances_
-feature_names = features
-weights = {feature_names[i]: round(float(importances[i])*100, 2) for i in range(len(features))}
-print("📊 Feature Importances:", weights)
+# Save feature list for predictions
+features = list(X.columns)
+joblib.dump(features, "model_features.pkl")
 
-# Send weights to WebApp
-WEBAPP_URL = "https://script.google.com/macros/s/AKfycbyQYkWuDeobLHd7m4RthtiOG41-tKy3XTfCeSbO_bZOs0PNAqWru53nfUk1NnX85Hf8/exec"  # <-- เปลี่ยนตรงนี้
-if WEBAPP_URL != "ใส่ URL ของ Google Web App ที่นี่":
-    import requests, json
-    try:
-        print("🌐 Sending new AI weights to WebApp...")
-        payload = {'action': 'update_weights', 'weights': json.dumps(weights)}
-        response = requests.post(WEBAPP_URL, data=payload)
-        print("✅ WebApp Response:", response.text)
-    except Exception as e:
-        print("❌ Failed to update WebApp:", e)
-
-# 4. Save the Model
-model_filename = 'gold_champion_macro.json'
-model.save_model(model_filename)
-print(f"💾 Model successfully saved to {model_filename}")
-print("✨ Automated Training Pipeline Finished Successfully!")
+print("✅ Training Complete! Models saved: xgboost_model.pkl, rf_model.pkl")
