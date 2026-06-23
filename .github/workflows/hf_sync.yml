@@ -15,8 +15,23 @@ jobs:
           fetch-depth: 0
           lfs: true
           
-      - name: Push to Hugging Face
+      - name: Push to Hugging Face via LFS
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          git push --force https://Titipong202539:$HF_TOKEN@huggingface.co/spaces/Titipong202539/gold-ai-server main
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # ล้างประวัติเดิมทิ้งชั่วคราว เพื่อเตรียมจัดกระเป๋าใหม่
+          git checkout --orphan hf-deploy
+          git rm -rf --cached .
+          
+          # บังคับเปิดท่อพิเศษ LFS สำหรับไฟล์โมเดล AI
+          git lfs install
+          git lfs track "*.pkl"
+          git lfs track "*.zip"
+          
+          # แพ็กของทั้งหมดแล้วส่งขึ้น Hugging Face ทันที!
+          git add .
+          git commit -m "Deploy models via LFS"
+          git push --force https://Titipong202539:$HF_TOKEN@huggingface.co/spaces/Titipong202539/gold-ai-server hf-deploy:main
