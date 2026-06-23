@@ -11,7 +11,7 @@ print("📊 Fetching market data...")
 tickers = {'Gold': 'GC=F', 'DXY': 'DX-Y.NYB', 'US10Y': '^TNX'}
 data_frames = []
 for name, ticker in tickers.items():
-    df = yf.download(ticker, period="10y", interval="1d")
+    df = yf.download(ticker, period="10y", interval="1d", multi_level_index=False)
     if 'Close' in df.columns:
         series = df['Close'].iloc[:, 0] if isinstance(df['Close'], pd.DataFrame) else df['Close']
     else:
