@@ -2,14 +2,14 @@ name: AI Auto-Training Pipeline
 
 on:
   schedule:
-    - cron: '0 0 * * 0' # รันอัตโนมัติทุกๆ เที่ยงคืนวันอาทิตย์
-  workflow_dispatch: # ปุ่มกดรันเอง Manual
+    - cron: '0 0 * * 0'
+  workflow_dispatch:
 
 jobs:
   train-and-deploy:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # ให้สิทธิ์บอทบันทึกไฟล์กลับเข้า GitHub ได้เลย
+      contents: write
     
     steps:
     - name: Checkout Repository
@@ -24,6 +24,20 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
+        pip install --upgrade yfinance
+        
+    - name: Fix yfinance Breaking Change
+      run: |
+        python -c "
+        import os
+        for f in ['train_model.py', 'train_rl.py', 'app.py']:
+            if os.path.exists(f):
+                with open(f, 'r') as file:
+                    content = file.read()
+                content = content.replace('interval=\"1d\")', 'interval=\"1d\", multi_level_index=False)')
+                with open(f, 'w') as file:
+                    file.write(content)
+        "
         
     - name: Run XGBoost & Random Forest Training
       run: python train_model.py
@@ -31,10 +45,10 @@ jobs:
     - name: Run PPO (Reinforcement Learning) Training
       run: python train_rl.py
       
-    - name: Commit and Push AI Models
+    - name: Commit and Push AI Models & Fixes
       run: |
         git config --global user.name "github-actions[bot]"
         git config --global user.email "github-actions[bot]@users.noreply.github.com"
-        git add xgboost_model.pkl rf_model.pkl ppo_gold_bot.zip
-        git commit -m "🤖 Auto-update AI ensemble models" || echo "No changes to commit"
+        git add .
+        git commit -m "🤖 Auto-update AI ensemble models & Fix yfinance" || echo "No changes to commit"
         git push
