@@ -49,8 +49,8 @@ def get_latest_features(sentiment_score=0.0):
     # Format for XGBoost/RF
     X = latest_data[features]
     
-    # Format for PPO
-    obs_ppo = latest_data.values.astype(np.float32)[0]
+    # Format for PPO (แก้บั๊ก 11 ตัวแปร ให้เหลือ 9 ตัวแปรตามที่โมเดล PPO ถูกฝึกมา)
+    obs_ppo = X.values.astype(np.float32)[0]
     
     return X, obs_ppo
 
