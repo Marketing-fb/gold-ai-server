@@ -20,14 +20,14 @@ except Exception as e:
     print(f"⚠️ Error loading models: {e}")
 
 def get_latest_features(sentiment_score=0.0):
-    # โหลดข้อมูลที่ GitHub ไปดึงมาให้ล่วงหน้า (แก้ปัญหา Yahoo บล็อก IP แบบชะงัด)
+    # โหลดข้อมูลที่ GitHub ไปดึงมาให้ล่วงหน้า
     if not os.path.exists('latest_data.csv'):
         raise FileNotFoundError("ไม่พบไฟล์ latest_data.csv กรุณากด Run workflow ใน GitHub ก่อนครับ")
         
     data = pd.read_csv('latest_data.csv', index_col=0, parse_dates=True)
     gold_prices = data['Gold']
 
-    # Feature Engineering
+    # Feature Engineering (สร้างเมนูอาหาร)
     data['Return_1d'] = gold_prices.pct_change(1)
     data['Return_3d'] = gold_prices.pct_change(3)
     data['SMA_10'] = gold_prices.rolling(window=10).mean()
@@ -43,14 +43,19 @@ def get_latest_features(sentiment_score=0.0):
     data['US10Y_Return'] = data['US10Y'].pct_change(1)
     data['Sentiment_Score'] = sentiment_score
     
+    # --- จัดเตรียมกล่องข้าวเฉพาะสำหรับ PPO (9 เมนู) ---
+    data['Return'] = data['Return_1d']
+    data['Sentiment'] = data['Sentiment_Score']
+    
     data.dropna(inplace=True)
     latest_data = data.iloc[-1:]
     
-    # Format for XGBoost/RF
+    # 1. จัดกล่องข้าวส่งให้ XGBoost/RF (8 เมนู ตามไฟล์ features)
     X = latest_data[features]
     
-    # Format for PPO (แก้บั๊ก 11 ตัวแปร ให้เหลือ 9 ตัวแปรตามที่โมเดล PPO ถูกฝึกมา)
-    obs_ppo = X.values.astype(np.float32)[0]
+    # 2. จัดกล่องข้าวส่งให้ PPO (9 เมนู ตามที่มันถูกฝึกมาเป๊ะๆ)
+    ppo_cols = ['Gold', 'DXY', 'US10Y', 'SMA_10', 'SMA_50', 'Return', 'DXY_Return', 'US10Y_Return', 'Sentiment']
+    obs_ppo = latest_data[ppo_cols].values.astype(np.float32)[0]
     
     return X, obs_ppo
 
