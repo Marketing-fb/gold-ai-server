@@ -50,7 +50,8 @@ class XAUUSDEnv(gym.Env):
         return obs.astype(np.float32)
 
     def step(self, action):
-        current_price = self.df['Close'].iloc[self.current_step]
+        # แก้บัคตรงนี้ครับ เปลี่ยนจาก 'Close' เป็น 'Gold'
+        current_price = self.df['Gold'].iloc[self.current_step]
         reward = 0
         done = False
         info = {}
