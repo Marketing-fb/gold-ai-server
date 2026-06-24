@@ -121,10 +121,10 @@ def get_latest_features(sentiment_score=0.0):
         obs_ppo = latest_data[ppo_features].values.astype(np.float32)[0]
         
         # Save to cache
-        feature_cache['data'] = (X, obs_ppo, latest_data)
+        feature_cache['data'] = (X, obs_ppo, latest_data, df)
         feature_cache['timestamp'] = current_time
         
-        return X, obs_ppo, latest_data
+        return X, obs_ppo, latest_data, df
         
     except Exception as e:
         print(f"Error in get_latest_features: {e}")
@@ -143,7 +143,7 @@ def predict():
         sentiment_param = request.args.get('sentiment', '0.0')
         sentiment_score = float(sentiment_param)
 
-        X, obs_ppo, latest_data = get_latest_features(sentiment_score)
+        X, obs_ppo, latest_data, df_raw = get_latest_features(sentiment_score)
         
         pred_xgb = int(model_xgb.predict(X)[0]) 
         pred_rf = int(model_rf.predict(X)[0])   
@@ -157,10 +157,20 @@ def predict():
         votes_sell = sum([1 for p in [pred_xgb, pred_rf, pred_ppo] if p == 0])
         
         # --- SMC Confidence Boost Logic ---
-        # อ่านค่า SMC ล่าสุด
         is_bullish_fvg = int(latest_data['Bullish_FVG'].iloc[0]) == 1
         is_bearish_fvg = int(latest_data['Bearish_FVG'].iloc[0]) == 1
         is_vol_spike = int(latest_data['Volume_Spike'].iloc[0]) == 1
+        
+        # Calculate OBs for plotting
+        gold_low = df_raw['low']
+        gold_high = df_raw['high']
+        bullish_ob = float(gold_low.rolling(window=10).min().iloc[-1])
+        bearish_ob = float(gold_high.rolling(window=10).max().iloc[-1])
+        
+        # Prepare chart data: format time as string "YYYY-MM-DD"
+        df_chart = df_raw.reset_index()
+        df_chart['time'] = df_chart['datetime'].dt.strftime('%Y-%m-%d')
+        chart_records = df_chart[['time', 'open', 'high', 'low', 'close']].to_dict(orient='records')
         
         final_decision = "HOLD"
         confidence_level = 50 # Base confidence
@@ -191,6 +201,13 @@ def predict():
             },
             "macro_inputs": {
                 "sentiment_score": sentiment_score
+            },
+            "chart_data": chart_records,
+            "smc_zones": {
+                "bullish_ob": bullish_ob,
+                "bearish_ob": bearish_ob,
+                "bullish_fvg": is_bullish_fvg,
+                "bearish_fvg": is_bearish_fvg
             }
         })
         
