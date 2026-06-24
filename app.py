@@ -98,7 +98,9 @@ def get_latest_features(sentiment_score=0.0):
         
         # Check if features match
         X = latest_data[features] if features else latest_data
-        obs_ppo = latest_data.values.astype(np.float32)[0]
+        
+        # PPO requires the exact number of features it was trained on (9 features)
+        obs_ppo = X.values.astype(np.float32)[0]
         
         return X, obs_ppo, latest_data
         
