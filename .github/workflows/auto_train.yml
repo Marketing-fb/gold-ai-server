@@ -2,8 +2,8 @@ name: AI Auto-Training Pipeline
 
 on:
   schedule:
-    - cron: '0 0 * * 0'
-  workflow_dispatch:
+    - cron: '0 0 * * 6'  # รันทุกๆ วันเสาร์ เวลาเที่ยงคืน 00:00 (UTC)
+  workflow_dispatch:      # ปุ่มกดรันเองเผื่อบอสใจร้อน
 
 jobs:
   train-and-deploy:
