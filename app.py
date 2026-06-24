@@ -40,7 +40,24 @@ def load_models():
 # Initial load
 load_models()
 
+import time
+
+# --- [FIX] TwelveData Rate Limit Cache ---
+feature_cache = {
+    'timestamp': 0,
+    'data': None
+}
+CACHE_TIMEOUT = 300 # Cache for 5 minutes (300 seconds)
+
 def get_latest_features(sentiment_score=0.0):
+    global feature_cache
+    current_time = time.time()
+    
+    # Return cached data if within timeout
+    if feature_cache['data'] is not None and (current_time - feature_cache['timestamp']) < CACHE_TIMEOUT:
+        print("⚡ Using Cached Data to prevent Rate Limit")
+        return feature_cache['data']
+
     try:
         # [FIX] Bypass Yahoo Finance Rate Limits by using TwelveData API
         td_api_key = "620cc347e47b4248bfeb14d641eff1a9"
@@ -102,10 +119,18 @@ def get_latest_features(sentiment_score=0.0):
         # PPO requires the exact number of features it was trained on (9 features)
         obs_ppo = X.values.astype(np.float32)[0]
         
+        # Save to cache
+        feature_cache['data'] = (X, obs_ppo, latest_data)
+        feature_cache['timestamp'] = current_time
+        
         return X, obs_ppo, latest_data
         
     except Exception as e:
         print(f"Error in get_latest_features: {e}")
+        # Fallback to cache if available even if timeout expired
+        if feature_cache['data'] is not None:
+            print("⚠️ Falling back to stale cache due to error")
+            return feature_cache['data']
         raise e
 
 @app.route('/predict', methods=['GET'])
