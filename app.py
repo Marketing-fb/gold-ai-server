@@ -3,11 +3,19 @@ import joblib
 import pandas as pd
 import numpy as np
 import yfinance as yf
+import requests
 from stable_baselines3 import PPO
 import threading
 from hf_retrain_loop import run_retrain 
 
 app = Flask(__name__)
+
+# --- [FIX] YFinance Rate Limit Bypass ---
+yf_session = requests.Session()
+yf_session.headers.update({
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
+})
 
 # Global variables for models
 model_xgb = None
@@ -37,7 +45,7 @@ def get_latest_features(sentiment_score=0.0):
     data_frames = []
     
     # Download OHLCV for Gold to calculate SMC
-    df_gold = yf.download(tickers['Gold'], period="60d", interval="1d")
+    df_gold = yf.download(tickers['Gold'], period="60d", interval="1d", session=yf_session)
     gold_close = df_gold['Close'].iloc[:, 0] if isinstance(df_gold['Close'], pd.DataFrame) else df_gold['Close']
     gold_high = df_gold['High'].iloc[:, 0] if isinstance(df_gold['High'], pd.DataFrame) else df_gold['High']
     gold_low = df_gold['Low'].iloc[:, 0] if isinstance(df_gold['Low'], pd.DataFrame) else df_gold['Low']
@@ -59,10 +67,10 @@ def get_latest_features(sentiment_score=0.0):
     data['RSI_14'] = 100 - (100 / (1 + rs))
 
     # Macro Features
-    df_dxy = yf.download(tickers['DXY'], period="60d", interval="1d")
+    df_dxy = yf.download(tickers['DXY'], period="60d", interval="1d", session=yf_session)
     data['DXY_Return'] = (df_dxy['Close'].iloc[:, 0] if isinstance(df_dxy['Close'], pd.DataFrame) else df_dxy['Close']).pct_change(1)
     
-    df_us10y = yf.download(tickers['US10Y'], period="60d", interval="1d")
+    df_us10y = yf.download(tickers['US10Y'], period="60d", interval="1d", session=yf_session)
     data['US10Y_Return'] = (df_us10y['Close'].iloc[:, 0] if isinstance(df_us10y['Close'], pd.DataFrame) else df_us10y['Close']).pct_change(1)
     
     data['Sentiment_Score'] = sentiment_score
