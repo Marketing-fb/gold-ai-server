@@ -113,11 +113,12 @@ def get_latest_features(sentiment_score=0.0):
         data.dropna(inplace=True)
         latest_data = data.iloc[-1:]
         
-        # Check if features match
+        # Check if features match for XGBoost/RandomForest
         X = latest_data[features] if features else latest_data
         
-        # PPO requires the exact number of features it was trained on (9 features)
-        obs_ppo = X.values.astype(np.float32)[0]
+        # PPO requires the exact 9 features it was trained on (before SMC was added)
+        ppo_features = ['Gold', 'Return_1d', 'Return_3d', 'SMA_10', 'SMA_50', 'RSI_14', 'DXY_Return', 'US10Y_Return', 'Sentiment_Score']
+        obs_ppo = latest_data[ppo_features].values.astype(np.float32)[0]
         
         # Save to cache
         feature_cache['data'] = (X, obs_ppo, latest_data)
