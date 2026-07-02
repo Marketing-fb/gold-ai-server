@@ -3,136 +3,60 @@ import joblib
 import pandas as pd
 import numpy as np
 import yfinance as yf
-import requests
 from stable_baselines3 import PPO
-import threading
-from hf_retrain_loop import run_retrain 
 
 app = Flask(__name__)
 
-# --- [FIX] YFinance Rate Limit Bypass ---
-yf_session = requests.Session()
-yf_session.headers.update({
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
-})
-
-# Global variables for models
-model_xgb = None
-model_rf = None
-features = None
-model_ppo = None
-MODELS_LOADED = False
-
-def load_models():
-    global model_xgb, model_rf, features, model_ppo, MODELS_LOADED
-    try:
-        model_xgb = joblib.load('xgboost_model.pkl')
-        model_rf = joblib.load('rf_model.pkl')
-        features = joblib.load('model_features.pkl')
-        model_ppo = PPO.load('ppo_xauusd_model')
-        MODELS_LOADED = True
-        print("✅ All Models Loaded Successfully")
-    except Exception as e:
-        MODELS_LOADED = False
-        print(f"⚠️ Error loading models: {e}")
-
-# Initial load
-load_models()
-
-import time
-
-# --- [FIX] TwelveData Rate Limit Cache ---
-feature_cache = {
-    'timestamp': 0,
-    'data': None
-}
-CACHE_TIMEOUT = 300 # Cache for 5 minutes (300 seconds)
+# Load Models
+try:
+    model_xgb = joblib.load('xgboost_model.pkl')
+    model_rf = joblib.load('rf_model.pkl')
+    features = joblib.load('model_features.pkl')
+    model_ppo = PPO.load('ppo_xauusd_model')
+    MODELS_LOADED = True
+    print("✅ All Models Loaded Successfully (XGBoost, Random Forest, PPO)")
+except Exception as e:
+    MODELS_LOADED = False
+    print(f"⚠️ Error loading models: {e}")
 
 def get_latest_features(sentiment_score=0.0):
-    global feature_cache
-    current_time = time.time()
+    tickers = {'Gold': 'GC=F', 'DXY': 'DX-Y.NYB', 'US10Y': '^TNX'}
+    data_frames = []
+    for name, ticker in tickers.items():
+        df = yf.download(ticker, period="60d", interval="1h")
+        series = df['Close'].iloc[:, 0] if isinstance(df['Close'], pd.DataFrame) else df['Close']
+        series.name = name
+        data_frames.append(series)
+
+    data = pd.concat(data_frames, axis=1, join='inner').dropna()
+    gold_prices = data['Gold']
+
+    # Feature Engineering
+    data['Return_1h'] = gold_prices.pct_change(1)
+    data['Return_3h'] = gold_prices.pct_change(3)
+    data['SMA_10'] = gold_prices.rolling(window=10).mean()
+    data['SMA_50'] = gold_prices.rolling(window=50).mean()
     
-    # Return cached data if within timeout
-    if feature_cache['data'] is not None and (current_time - feature_cache['timestamp']) < CACHE_TIMEOUT:
-        print("⚡ Using Cached Data to prevent Rate Limit")
-        return feature_cache['data']
+    delta = data['Return_1h']
+    gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+    rs = gain / loss
+    data['RSI_14'] = 100 - (100 / (1 + rs))
 
-    try:
-        # [FIX] Bypass Yahoo Finance Rate Limits by using TwelveData API
-        td_api_key = "620cc347e47b4248bfeb14d641eff1a9"
-        url = f"https://api.twelvedata.com/time_series?symbol=XAU/USD&interval=1day&outputsize=60&apikey={td_api_key}"
-        res = requests.get(url).json()
-        
-        if 'values' not in res:
-            raise Exception(f"TwelveData API Error: {res}")
-            
-        df = pd.DataFrame(res['values'])
-        df['datetime'] = pd.to_datetime(df['datetime'])
-        df.set_index('datetime', inplace=True)
-        df = df.astype(float)
-        df = df.iloc[::-1] # Reverse so oldest is first (index 0 is oldest)
-        
-        gold_close = df['close']
-        gold_high = df['high']
-        gold_low = df['low']
-        gold_open = df['open']
-        
-        data = pd.DataFrame({'Gold': gold_close})
-
-        # Basic Features
-        data['Return_1d'] = gold_close.pct_change(1)
-        data['Return_3d'] = gold_close.pct_change(3)
-        data['SMA_10'] = gold_close.rolling(window=10).mean()
-        data['SMA_50'] = gold_close.rolling(window=50).mean()
-        
-        delta = data['Return_1d']
-        gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-        rs = gain / loss
-        data['RSI_14'] = 100 - (100 / (1 + rs))
-
-        # Macro Features (Bypassed due to Yahoo Rate Limits - Neutralized)
-        data['DXY_Return'] = 0.0
-        data['US10Y_Return'] = 0.0
-        data['Sentiment_Score'] = sentiment_score
-
-        # --- [NEW] Smart Money Concepts (SMC) Features ---
-        data['Bullish_FVG'] = (gold_low > gold_high.shift(2)).astype(int)
-        data['Bearish_FVG'] = (gold_high < gold_low.shift(2)).astype(int)
-        
-        lowest_10d = gold_low.rolling(window=10).min()
-        data['Dist_to_Bullish_OB'] = (gold_close - lowest_10d) / lowest_10d
-        
-        highest_10d = gold_high.rolling(window=10).max()
-        data['Dist_to_Bearish_OB'] = (highest_10d - gold_close) / highest_10d
-
-        # Volume is not available in free TwelveData, so we neutralize the spike detection
-        data['Volume_Spike'] = 0 
-
-        data.dropna(inplace=True)
-        latest_data = data.iloc[-1:]
-        
-        # Check if features match for XGBoost/RandomForest
-        X = latest_data[features] if features else latest_data
-        
-        # PPO requires the exact 9 features it was trained on (before SMC was added)
-        ppo_features = ['Gold', 'Return_1d', 'Return_3d', 'SMA_10', 'SMA_50', 'RSI_14', 'DXY_Return', 'US10Y_Return', 'Sentiment_Score']
-        obs_ppo = latest_data[ppo_features].values.astype(np.float32)[0]
-        
-        # Save to cache
-        feature_cache['data'] = (X, obs_ppo, latest_data, df)
-        feature_cache['timestamp'] = current_time
-        
-        return X, obs_ppo, latest_data, df
-        
-    except Exception as e:
-        print(f"Error in get_latest_features: {e}")
-        # Fallback to cache if available even if timeout expired
-        if feature_cache['data'] is not None:
-            print("⚠️ Falling back to stale cache due to error")
-            return feature_cache['data']
-        raise e
+    data['DXY_Return'] = data['DXY'].pct_change(1)
+    data['US10Y_Return'] = data['US10Y'].pct_change(1)
+    data['Sentiment_Score'] = sentiment_score
+    
+    data.dropna(inplace=True)
+    latest_data = data.iloc[-1:]
+    
+    # Format for XGBoost/RF
+    X = latest_data[features]
+    
+    # Format for PPO
+    obs_ppo = latest_data.values.astype(np.float32)[0]
+    
+    return X, obs_ppo
 
 @app.route('/predict', methods=['GET'])
 def predict():
@@ -140,60 +64,46 @@ def predict():
         return jsonify({"status": "error", "message": "Models not loaded"}), 500
         
     try:
+        # Get Sentiment from request (default 0)
         sentiment_param = request.args.get('sentiment', '0.0')
         sentiment_score = float(sentiment_param)
 
-        X, obs_ppo, latest_data, df_raw = get_latest_features(sentiment_score)
+        X, obs_ppo = get_latest_features(sentiment_score)
         
-        pred_xgb = int(model_xgb.predict(X)[0]) 
-        pred_rf = int(model_rf.predict(X)[0])   
+        # 1. XGBoost Prediction
+        pred_xgb = int(model_xgb.predict(X)[0]) # 1 = Buy, 0 = Sell
+        
+        # 2. Random Forest Prediction
+        pred_rf = int(model_rf.predict(X)[0])   # 1 = Buy, 0 = Sell
+        
+        # 3. RL PPO Prediction
         action_ppo, _ = model_ppo.predict(obs_ppo, deterministic=True)
-        
-        if action_ppo == 1: pred_ppo = 1
-        elif action_ppo == 2: pred_ppo = 0
-        else: pred_ppo = -1 
+        # PPO Action: 0=HOLD, 1=BUY, 2=SELL
+        if action_ppo == 1:
+            pred_ppo = 1
+        elif action_ppo == 2:
+            pred_ppo = 0
+        else:
+            pred_ppo = -1 # Abstain
             
+        # Ensemble Voting System (Majority Vote)
         votes_buy = sum([1 for p in [pred_xgb, pred_rf, pred_ppo] if p == 1])
         votes_sell = sum([1 for p in [pred_xgb, pred_rf, pred_ppo] if p == 0])
         
-        # --- SMC Confidence Boost Logic ---
-        is_bullish_fvg = int(latest_data['Bullish_FVG'].iloc[0]) == 1
-        is_bearish_fvg = int(latest_data['Bearish_FVG'].iloc[0]) == 1
-        is_vol_spike = int(latest_data['Volume_Spike'].iloc[0]) == 1
-        
-        # Calculate OBs for plotting
-        gold_low = df_raw['low']
-        gold_high = df_raw['high']
-        bullish_ob = float(gold_low.rolling(window=10).min().iloc[-1])
-        bearish_ob = float(gold_high.rolling(window=10).max().iloc[-1])
-        
-        # Prepare chart data: format time as string "YYYY-MM-DD"
-        df_chart = df_raw.reset_index()
-        df_chart['time'] = df_chart['datetime'].dt.strftime('%Y-%m-%d')
-        chart_records = df_chart[['time', 'open', 'high', 'low', 'close']].to_dict(orient='records')
-        
         final_decision = "HOLD"
-        confidence_level = 50 # Base confidence
-        reason = "System Normal"
-
+        confidence = "Low"
+        
         if votes_buy >= 2:
             final_decision = "BUY"
-            confidence_level = 75
-            if is_bullish_fvg and is_vol_spike:
-                confidence_level = 95
-                reason = "Smart Money BUY (Bullish FVG + Vol Spike Detected)"
+            confidence = f"{votes_buy}/3 Models Agree"
         elif votes_sell >= 2:
             final_decision = "SELL"
-            confidence_level = 75
-            if is_bearish_fvg and is_vol_spike:
-                confidence_level = 95
-                reason = "Smart Money SELL (Bearish FVG + Vol Spike Detected)"
+            confidence = f"{votes_sell}/3 Models Agree"
             
         return jsonify({
             "status": "success",
             "decision": final_decision,
-            "confidence_percent": confidence_level,
-            "smc_reason": reason,
+            "confidence": confidence,
             "votes": {
                 "XGBoost": "BUY" if pred_xgb == 1 else "SELL",
                 "RandomForest": "BUY" if pred_rf == 1 else "SELL",
@@ -201,45 +111,15 @@ def predict():
             },
             "macro_inputs": {
                 "sentiment_score": sentiment_score
-            },
-            "chart_data": chart_records,
-            "smc_zones": {
-                "bullish_ob": bullish_ob,
-                "bearish_ob": bearish_ob,
-                "bullish_fvg": is_bullish_fvg,
-                "bearish_fvg": is_bearish_fvg
             }
         })
         
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-@app.route('/retrain', methods=['POST', 'GET'])
-def retrain():
-    def run_and_reload():
-        success, msg = run_retrain()
-        if success:
-            print("🔄 รีโหลดโมเดลใหม่เข้าสู่หน่วยความจำ...")
-            load_models()
-    
-    thread = threading.Thread(target=run_and_reload)
-    thread.start()
-    
-    return jsonify({
-        "status": "processing",
-        "message": "เริ่มกระบวนการ Self-Learning แล้ว AI กำลังดึงข้อมูลและเรียนรู้ SMC"
-    })
-
-@app.route('/ai_health', methods=['GET'])
-def health():
-    return jsonify({
-        "status": "success",
-        "models_loaded": MODELS_LOADED
-    })
-
 @app.route('/')
 def home():
-    return "Institutional Grade Gold AI Server (SMC Edition) is Running!"
+    return "Institutional Grade Gold AI Server (Ensemble + Macro + Sentiment) is Running!"
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=7860)
+    app.run(host='0.0.0.0', port=10000)
