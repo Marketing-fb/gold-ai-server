@@ -11,7 +11,7 @@ print("📊 Fetching market data...")
 tickers = {'Gold': 'GC=F', 'DXY': 'DX-Y.NYB', 'US10Y': '^TNX'}
 data_frames = []
 for name, ticker in tickers.items():
-    df = yf.download(ticker, period="10y", interval="1d", multi_level_index=False)
+    df = yf.download(ticker, period="730d", interval="1h")
     if 'Close' in df.columns:
         series = df['Close'].iloc[:, 0] if isinstance(df['Close'], pd.DataFrame) else df['Close']
     else:
@@ -26,12 +26,12 @@ print("⚙️ Engineering Features...")
 data = merged_data.copy()
 gold_prices = data['Gold'].squeeze()
 
-data['Return_1d'] = gold_prices.pct_change(1)
-data['Return_3d'] = gold_prices.pct_change(3)
+data['Return_1h'] = gold_prices.pct_change(1)
+data['Return_3h'] = gold_prices.pct_change(3)
 data['SMA_10'] = gold_prices.rolling(window=10).mean()
 data['SMA_50'] = gold_prices.rolling(window=50).mean()
-data['RSI_14'] = 100 - (100 / (1 + data['Return_1d'].apply(lambda x: x if x > 0 else 0).rolling(14).mean() / 
-                                  data['Return_1d'].apply(lambda x: -x if x < 0 else 0).rolling(14).mean()))
+data['RSI_14'] = 100 - (100 / (1 + data['Return_1h'].apply(lambda x: x if x > 0 else 0).rolling(14).mean() / 
+                                  data['Return_1h'].apply(lambda x: -x if x < 0 else 0).rolling(14).mean()))
 
 # Macro Features
 data['DXY_Return'] = data['DXY'].pct_change(1)
@@ -41,7 +41,7 @@ data['US10Y_Return'] = data['US10Y'].pct_change(1)
 data['Sentiment_Score'] = np.random.uniform(-1, 1, size=len(data)) 
 
 # Target Variable (1 if price goes up tomorrow, else 0)
-data['Target'] = (data['Return_1d'].shift(-1) > 0).astype(int)
+data['Target'] = (data['Return_1h'].shift(-1) > 0).astype(int)
 data.dropna(inplace=True)
 
 X = data.drop(columns=['Target', 'Gold', 'DXY', 'US10Y'])
