@@ -58,6 +58,26 @@ def get_latest_features(sentiment_score=0.0):
     
     return X, obs_ppo
 
+@app.route('/retrain', methods=['GET'])
+def retrain():
+    import subprocess
+    try:
+        # Run training scripts
+        subprocess.run(["python", "train_model.py"], check=True)
+        subprocess.run(["python", "train_rl.py"], check=True)
+        
+        # Reload models
+        global model_xgb, model_rf, features, model_ppo, MODELS_LOADED
+        model_xgb = joblib.load('xgboost_model.pkl')
+        model_rf = joblib.load('rf_model.pkl')
+        features = joblib.load('model_features.pkl')
+        model_ppo = PPO.load('ppo_xauusd_model')
+        MODELS_LOADED = True
+        
+        return jsonify({"status": "success", "message": "AI Models retrained successfully to 1h timeframe!"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 @app.route('/predict', methods=['GET'])
 def predict():
     if not MODELS_LOADED:
