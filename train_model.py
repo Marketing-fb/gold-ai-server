@@ -11,7 +11,7 @@ print("Fetching market data...")
 tickers = {'Gold': 'GC=F', 'DXY': 'DX-Y.NYB', 'US10Y': '^TNX'}
 data_frames = []
 for name, ticker in tickers.items():
-    df = yf.download(ticker, period="700d", interval="1h")
+    df = yf.download(ticker, period="60d", interval="1h")
     if 'Close' in df.columns:
         series = df['Close'].iloc[:, 0] if isinstance(df['Close'], pd.DataFrame) else df['Close']
     else:
@@ -19,7 +19,7 @@ for name, ticker in tickers.items():
     series.name = name
     data_frames.append(series)
 
-merged_data = pd.concat(data_frames, axis=1, join='inner').dropna()
+merged_data = pd.concat(data_frames, axis=1, join='outer').ffill().dropna()
 
 # 2. Feature Engineering
 print("Engineering Features...")
