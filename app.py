@@ -17,7 +17,9 @@ try:
     print("✅ All Models Loaded Successfully (XGBoost, Random Forest, PPO)")
 except Exception as e:
     MODELS_LOADED = False
-    print(f"⚠️ Error loading models: {e}")
+    import traceback
+    MODEL_ERROR = traceback.format_exc()
+    print(f"⚠️ Error loading models: {MODEL_ERROR}")
 
 def get_latest_features(sentiment_score=0.0):
     tickers = {'Gold': 'GC=F', 'DXY': 'DX-Y.NYB', 'US10Y': '^TNX'}
@@ -93,7 +95,7 @@ def retrain():
 @app.route('/predict', methods=['GET'])
 def predict():
     if not MODELS_LOADED:
-        return jsonify({"status": "error", "message": "Models not loaded"}), 500
+        return jsonify({"status": "error", "message": f"Models not loaded: {MODEL_ERROR}"}), 500
         
     try:
         # Get Sentiment from request (default 0)
