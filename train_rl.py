@@ -5,12 +5,12 @@ from stable_baselines3.common.vec_env import DummyVecEnv
 from xauusd_env import XAUUSDEnv
 
 def fetch_data():
-    print("📊 Fetching market data for RL training...")
+    print("Fetching market data for RL training...")
     # Fetch Gold, DXY, US10Y
     tickers = {'Gold': 'GC=F', 'DXY': 'DX-Y.NYB', 'US10Y': '^TNX'}
     dfs = []
     for name, ticker in tickers.items():
-        df = yf.download(ticker, period="730d", interval="1h")
+        df = yf.download(ticker, period="700d", interval="1h")
         if 'Close' in df.columns:
             series = df['Close'].iloc[:, 0] if isinstance(df['Close'], pd.DataFrame) else df['Close']
         else:
@@ -36,13 +36,13 @@ def fetch_data():
 if __name__ == "__main__":
     df = fetch_data()
     
-    print("🤖 Initializing Environment...")
+    print("Initializing Environment...")
     env = DummyVecEnv([lambda: XAUUSDEnv(df)])
     
-    print("🧠 Training RL Model (PPO)...")
+    print("Training RL Model (PPO)...")
     # PPO params tuned for financial data
     model = PPO("MlpPolicy", env, verbose=1, learning_rate=0.0003, n_steps=2048, batch_size=64, gamma=0.99)
     model.learn(total_timesteps=50000)
     
     model.save("ppo_xauusd_model")
-    print("✅ Model saved as 'ppo_xauusd_model.zip'")
+    print("Model saved as 'ppo_xauusd_model.zip'")
