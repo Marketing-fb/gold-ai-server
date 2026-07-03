@@ -48,7 +48,16 @@ def get_latest_features(sentiment_score=0.0):
             print(f"Error fetching {name} via proxy: {e}")
             pass
 
+    if not data_frames or len(data_frames) < 3:
+        # Fallback to prevent 500 error crashing the UI
+        # We raise a custom exception that predict() can catch
+        raise ValueError("HF_IP_BLOCKED")
+
     data = pd.concat(data_frames, axis=1, join='outer').ffill().dropna()
+    
+    if data.empty:
+        raise ValueError("HF_IP_BLOCKED")
+        
     gold_prices = data['Gold']
 
     # Feature Engineering
@@ -154,6 +163,22 @@ def predict():
             }
         })
         
+    except ValueError as ve:
+        if str(ve) == "HF_IP_BLOCKED":
+            return jsonify({
+                "status": "success",
+                "decision": "BLOCKED",
+                "confidence": "HF IP Blocked by Yahoo",
+                "votes": {
+                    "XGBoost": "OFFLINE",
+                    "RandomForest": "OFFLINE",
+                    "PPO_RL": "OFFLINE"
+                },
+                "macro_inputs": {
+                    "sentiment_score": sentiment_score if 'sentiment_score' in locals() else 0.0
+                }
+            })
+        return jsonify({"status": "error", "message": str(ve)}), 500
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
