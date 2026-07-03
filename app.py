@@ -22,11 +22,31 @@ except Exception as e:
 def get_latest_features(sentiment_score=0.0):
     tickers = {'Gold': 'GC=F', 'DXY': 'DX-Y.NYB', 'US10Y': '^TNX'}
     data_frames = []
+    
+    import json
+    import urllib.parse
+    import requests
+    
     for name, ticker in tickers.items():
-        df = yf.download(ticker, period="60d", interval="1h")
-        series = df['Close'].iloc[:, 0] if isinstance(df['Close'], pd.DataFrame) else df['Close']
-        series.name = name
-        data_frames.append(series)
+        try:
+            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1h&range=60d"
+            proxy_url = f"https://api.allorigins.win/get?url={urllib.parse.quote(url)}"
+            res = requests.get(proxy_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=15).json()
+            chart = json.loads(res['contents'])['chart']['result'][0]
+            
+            timestamps = chart['timestamp']
+            quote = chart['indicators']['quote'][0]
+            
+            df = pd.DataFrame({
+                'Close': quote['close']
+            }, index=pd.to_datetime(timestamps, unit='s', utc=True)).dropna()
+            
+            series = df['Close']
+            series.name = name
+            data_frames.append(series)
+        except Exception as e:
+            print(f"Error fetching {name} via proxy: {e}")
+            pass
 
     data = pd.concat(data_frames, axis=1, join='outer').ffill().dropna()
     gold_prices = data['Gold']
