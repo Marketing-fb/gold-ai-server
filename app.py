@@ -23,34 +23,17 @@ def get_latest_features(sentiment_score=0.0):
     tickers = {'Gold': 'GC=F', 'DXY': 'DX-Y.NYB', 'US10Y': '^TNX'}
     data_frames = []
     
-    import json
-    import urllib.parse
-    import requests
-    
     for name, ticker in tickers.items():
         try:
-            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1h&range=60d"
-            proxy_url = f"https://api.allorigins.win/get?url={urllib.parse.quote(url)}"
-            res = requests.get(proxy_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=15).json()
-            chart = json.loads(res['contents'])['chart']['result'][0]
-            
-            timestamps = chart['timestamp']
-            quote = chart['indicators']['quote'][0]
-            
-            df = pd.DataFrame({
-                'Close': quote['close']
-            }, index=pd.to_datetime(timestamps, unit='s', utc=True)).dropna()
-            
-            series = df['Close']
+            df = yf.download(ticker, period="60d", interval="1h")
+            series = df['Close'].iloc[:, 0] if isinstance(df['Close'], pd.DataFrame) else df['Close']
             series.name = name
             data_frames.append(series)
         except Exception as e:
-            print(f"Error fetching {name} via proxy: {e}")
+            print(f"Error fetching {name} via yfinance: {e}")
             pass
 
     if not data_frames or len(data_frames) < 3:
-        # Fallback to prevent 500 error crashing the UI
-        # We raise a custom exception that predict() can catch
         raise ValueError("HF_IP_BLOCKED")
 
     data = pd.concat(data_frames, axis=1, join='outer').ffill().dropna()
@@ -187,4 +170,6 @@ def home():
     return "Institutional Grade Gold AI Server (Ensemble + Macro + Sentiment) is Running!"
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=10000)
+    import os
+    port = int(os.environ.get('PORT', 10000))
+    app.run(host='0.0.0.0', port=port)
