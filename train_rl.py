@@ -10,7 +10,7 @@ def fetch_data():
     tickers = {'Gold': 'GC=F', 'DXY': 'DX-Y.NYB', 'US10Y': '^TNX'}
     dfs = []
     for name, ticker in tickers.items():
-        df = yf.download(ticker, period="700d", interval="1h")
+        df = yf.download(ticker, period="60d", interval="1h")
         if 'Close' in df.columns:
             series = df['Close'].iloc[:, 0] if isinstance(df['Close'], pd.DataFrame) else df['Close']
         else:
@@ -18,7 +18,7 @@ def fetch_data():
         series.name = name
         dfs.append(series)
     
-    df = pd.concat(dfs, axis=1, join='inner').dropna()
+    df = pd.concat(dfs, axis=1, join='outer').ffill().dropna()
     
     # Simple Features
     df['SMA_10'] = df['Gold'].rolling(10).mean()
