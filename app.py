@@ -67,8 +67,9 @@ def get_latest_features(sentiment_score=0.0):
     # Format for XGBoost/RF
     X = latest_data[features]
     
-    # Format for PPO
-    obs_ppo = latest_data.values.astype(np.float32)[0]
+    # Format for PPO (9 features exactly as in train_rl.py)
+    ppo_features = ['Gold', 'DXY', 'US10Y', 'SMA_10', 'SMA_50', 'Return_1h', 'DXY_Return', 'US10Y_Return', 'Sentiment_Score']
+    obs_ppo = latest_data[ppo_features].values.astype(np.float32)[0]
     
     return X, obs_ppo
 
