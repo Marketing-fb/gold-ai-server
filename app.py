@@ -28,7 +28,7 @@ def get_latest_features(sentiment_score=0.0):
         series.name = name
         data_frames.append(series)
 
-    data = pd.concat(data_frames, axis=1, join='inner').dropna()
+    data = pd.concat(data_frames, axis=1, join='outer').ffill().dropna()
     gold_prices = data['Gold']
 
     # Feature Engineering
