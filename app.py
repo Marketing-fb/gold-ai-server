@@ -71,7 +71,9 @@ def get_latest_features(sentiment_score=0.0):
     ppo_features = ['Gold', 'DXY', 'US10Y', 'SMA_10', 'SMA_50', 'Return_1h', 'DXY_Return', 'US10Y_Return', 'Sentiment_Score']
     obs_ppo = latest_data[ppo_features].values.astype(np.float32)[0]
     
-    return X, obs_ppo
+    live_price = float(gold_prices.iloc[-1])
+    
+    return X, obs_ppo, live_price
 
 @app.route('/retrain', methods=['GET'])
 def retrain():
@@ -103,7 +105,7 @@ def predict():
         sentiment_param = request.args.get('sentiment', '0.0')
         sentiment_score = float(sentiment_param)
 
-        X, obs_ppo = get_latest_features(sentiment_score)
+        X, obs_ppo, live_price = get_latest_features(sentiment_score)
         
         # 1. XGBoost Prediction
         pred_xgb = int(model_xgb.predict(X)[0]) # 1 = Buy, 0 = Sell
@@ -139,6 +141,7 @@ def predict():
             "status": "success",
             "decision": final_decision,
             "confidence": confidence,
+            "live_price": live_price,
             "votes": {
                 "XGBoost": "BUY" if pred_xgb == 1 else "SELL",
                 "RandomForest": "BUY" if pred_rf == 1 else "SELL",
@@ -155,6 +158,7 @@ def predict():
                 "status": "success",
                 "decision": "BLOCKED",
                 "confidence": "HF IP Blocked by Yahoo",
+                "live_price": 0.0,
                 "votes": {
                     "XGBoost": "OFFLINE",
                     "RandomForest": "OFFLINE",
