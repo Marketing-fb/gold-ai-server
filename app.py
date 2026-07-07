@@ -4,6 +4,8 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 from stable_baselines3 import PPO
+import csv
+import os
 
 app = Flask(__name__)
 
@@ -169,6 +171,32 @@ def predict():
                 }
             })
         return jsonify({"status": "error", "message": str(ve)}), 500
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/reward', methods=['POST'])
+def reward():
+    try:
+        data = request.json
+        signal = data.get('signal', 'UNKNOWN')
+        entry_price = data.get('entry_price', 0)
+        result = data.get('result', 'UNKNOWN')
+        profit_loss = data.get('profit_loss', 0)
+        
+        # Log to CSV for Reinforcement Learning (PPO) fine-tuning
+        csv_file = 'rl_feedback.csv'
+        file_exists = os.path.isfile(csv_file)
+        
+        with open(csv_file, mode='a', newline='') as file:
+            writer = csv.writer(file)
+            if not file_exists:
+                writer.writerow(['timestamp', 'signal', 'entry_price', 'result', 'profit_loss'])
+            
+            import datetime
+            timestamp = datetime.datetime.now().isoformat()
+            writer.writerow([timestamp, signal, entry_price, result, profit_loss])
+            
+        return jsonify({"status": "success", "message": "Feedback recorded."})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
